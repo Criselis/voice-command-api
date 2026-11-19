@@ -1,5 +1,43 @@
 # Voice Command API at 4Geeks Academy
 
+## ✅ Solution overview
+
+Voice → transcription → routing (Groq LLM) → task action, all in memory.
+
+| Endpoint | What it does |
+|---|---|
+| `GET /tasks` | List all tasks (200) |
+| `POST /tasks` | Create `{title, done=false}`, returns the task with a unique id (201) |
+| `PUT /tasks/{task_id}` | Replace `title` and `done` (200, 404 if missing) |
+| `PATCH /tasks/{task_id}` | Update `title` and/or `done` (200, 404 if missing, 422 if empty) |
+| `DELETE /tasks/{task_id}` | Delete and return a confirmation message (200, 404 if missing) |
+| `POST /instruction` | `{"transcription": "..."}` → Groq → `{"endpoint", "method", "params"}`. Only routes, never executes |
+| `POST /transcribe` | Audio (`multipart/form-data`, field `file`, optional `language`) or JSON `{"transcription"}` → Whisper on Groq → same routing as `/instruction` → executes the action → `{transcription, instruction, result}` |
+
+**How it is built** (`src/app/services/`):
+
+- `task_store.py` — module-level `tasks` list; ids come from a counter, so they stay unique after deletes.
+- `instruction_router.py` — system prompt that forces a single JSON object, Groq JSON mode (`response_format={"type": "json_object"}`, `temperature=0`) and the current task list sent as context so the model can resolve "mark buy milk as done" to the right id. The answer is validated (allowed methods, `/tasks` vs `/tasks/<id>`) and retried once if malformed. There is no keyword matching on the transcription: every routing decision comes from the LLM.
+- `speech_to_text.py` — Groq Whisper (`GROQ_TRANSCRIPTION_MODEL`).
+- `task_executor.py` — runs the routed instruction against the store, with the same validation as the `/tasks` endpoints.
+
+**Run it**
+
+```bash
+cp .env.example .env          # set GROQ_API_KEY (never commit .env; it is in .gitignore)
+uv sync
+uv run uvicorn src.main:app --reload
+uv run pytest                 # 19 tests; Groq is mocked, no API key needed
+```
+
+```bash
+cd frontend && cp .env.example .env && npm install && npm run dev   # http://localhost:5173
+```
+
+CORS origins come from `ALLOWED_ORIGINS` in `.env` (defaults allow the Vite dev server on port 5173).
+
+---
+
 <!-- hide -->
 
 By [@ehiber](https://github.com/ehiber) and [other contributors](https://github.com/4GeeksAcademy/voice-command-api/graphs/contributors) at [4Geeks Academy](https://4geeksacademy.com/)
